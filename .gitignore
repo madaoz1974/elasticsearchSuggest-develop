@@ -170,3 +170,4 @@ cython_debug/
 # PyPI configuration file
 .pypirc
 elasticsearch/indexer/env.list
+.DS_Store

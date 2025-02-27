@@ -1,21 +1,23 @@
-FROM python:3.9-buster
+FROM --platform=linux/amd64 python:3.9-buster
 
 # 環境変数の設定
 ENV DEBIAN_FRONTEND=noninteractive
 ENV DEBCONF_NOWARNINGS=yes
+ENV PATH="/opt/mssql-tools/bin:${PATH}"
+ENV PYTHONUNBUFFERED=1
 
 WORKDIR /app
 
-COPY requirements.txt .    
-COPY index_data.py .    
+COPY requirements.txt .
+COPY index_data.py .
+COPY install_msodbc.sh .
+
+# install_msodbc.shに実行権限を付与
+RUN chmod +x ./install_msodbc.sh
 
 # 必要なパッケージのインストール
-RUN apt-get update && \
-    apt-get install -y apt-utils apt-transport-https gnupg curl && \
-    curl https://packages.microsoft.com/keys/microsoft.asc | apt-key add - && \
-    curl https://packages.microsoft.com/config/debian/10/prod.list > /etc/apt/sources.list.d/mssql-release.list && \
-    apt-get update && \
-    ACCEPT_EULA=Y apt-get install -y msodbcsql17 mssql-tools unixodbc-dev && \
+RUN ./install_msodbc.sh && \
+    apt-get install -y unixodbc && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
@@ -23,4 +25,5 @@ RUN apt-get update && \
 RUN pip install --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
-CMD ["python", "/app/index_data.py"]
+# verbose実行オプションを追加
+CMD ["python", "-v", "/app/index_data.py"]

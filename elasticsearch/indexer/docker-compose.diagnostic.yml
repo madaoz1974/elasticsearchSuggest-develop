@@ -1,0 +1,18 @@
+version: '3'
+
+services:
+  indexer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      platforms:
+        - linux/amd64
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+    # 診断スクリプトを実行
+    command: bash -c "chmod +x /app/network-diagnostics.sh && /app/network-diagnostics.sh"
+    # 対話モードを有効化
+    stdin_open: true
+    tty: true

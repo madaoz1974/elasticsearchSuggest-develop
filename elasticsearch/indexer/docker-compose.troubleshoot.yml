@@ -1,0 +1,18 @@
+version: '3'
+
+services:
+  indexer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      platforms:
+        - linux/amd64
+    env_file:
+      - .env
+    volumes:
+      - .:/app  # ローカルのコードをコンテナにマウント
+    # デバッグラッパースクリプトを使用
+    command: python /app/debug_wrapper.py
+    # 対話モードを有効化
+    stdin_open: true
+    tty: true
