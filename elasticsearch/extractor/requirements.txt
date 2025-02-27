@@ -1,0 +1,7 @@
+Flask
+keybert
+scikit-learn
+sentence-transformers
+gunicorn
+MeCab-python3
+elasticsearch

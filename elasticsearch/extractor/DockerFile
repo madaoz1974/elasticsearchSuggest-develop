@@ -1,0 +1,41 @@
+FROM python:3.9-slim
+
+WORKDIR /app
+
+COPY requirements.txt .  
+COPY . /app  
+
+# システムの更新とMeCab関連パッケージのインストール
+RUN apt-get update && \
+    apt-get install -y \
+    curl \
+    mecab \
+    mecab-ipadic \
+    mecab-ipadic-utf8 \
+    libmecab-dev \
+    git \
+    make \
+    xz-utils \
+    file \
+    sudo && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+# MeCab設定の修正（ディレクトリ構造を先に作成）
+RUN mkdir -p /usr/lib/x86_64-linux-gnu/mecab/dic && \
+    mkdir -p /usr/share/doc/mecab && \
+    ln -s /var/lib/mecab/dic/ipadic-utf8 /usr/lib/x86_64-linux-gnu/mecab/dic/ipadic && \
+    ln -s /var/lib/mecab/dic/ipadic-utf8 /usr/share/doc/mecab/ipadic
+
+# 必要なPythonパッケージのインストール
+RUN pip install --no-cache-dir -r requirements.txt
+
+# 環境変数の設定
+ENV PYTHONPATH=/app
+ENV FLASK_APP=/app/app.py
+ENV MECAB_DICT_DIR=/usr/lib/x86_64-linux-gnu/mecab/dic/ipadic
+ENV MECABRC=/etc/mecabrc
+
+EXPOSE 80
+
+CMD ["gunicorn", "--bind", "0.0.0.0:80", "--timeout", "300", "app:app"]

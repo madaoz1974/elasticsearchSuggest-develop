@@ -1,0 +1,39 @@
+// PUT /msprdb-index
+{
+  "settings": {
+    "analysis": {
+      "analyzer": {
+        "ja_analyzer": {
+          "type": "custom",
+          "tokenizer": "kuromoji_tokenizer"
+        }
+      }
+    }
+  },
+  "mappings": {
+    "properties": {
+      "PostedNumber": {"type": "keyword"},
+      "CreatedAt": {"type": "date"},
+      "PostId": {"type": "keyword"},
+      "PostedAt": {"type": "date"},
+      "PostedUser": {"type": "keyword"},
+      "Text": {"type": "text", "analyzer": "ja_analyzer"},
+      "DeletedAt": {"type": "date"},
+      "PostStatus": {"type": "integer"},
+      "HashTags": {"type": "text", "analyzer": "ja_analyzer"},
+      "Keywords": {"type": "text", "analyzer": "ja_analyzer"},
+      "Comments": {
+        "type": "nested",
+        "properties": {
+          "CommentNumber": {"type": "keyword"},
+          "CreatedAt": {"type": "date"},
+          "CommentId": {"type": "keyword"},
+          "CommentedUser": {"type": "keyword"},
+          "Text": {"type": "text", "analyzer": "ja_analyzer"},
+          "CommentedAt": {"type": "date"},
+          "DeletedAt": {"type": "date"}
+        }
+      }
+    }
+  }
+}

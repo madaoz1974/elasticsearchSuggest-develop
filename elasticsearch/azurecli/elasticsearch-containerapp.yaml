@@ -1,0 +1,32 @@
+properties:
+  managedEnvironmentId: /subscriptions/59d36ea2-439c-4922-b819-f8b2496ced6e/resourceGroups/poc-search-suggest/providers/Microsoft.App/managedEnvironments/poc-search-suggest-env
+  configuration:
+    secrets:
+      - name: storagekey
+        value: $STORAGE_KEY
+    storage:
+      - name: esdata
+        azureFile:
+          shareName: esdata
+          storageAccountName: pocsearchsuggest
+          accessMode: ReadWrite
+  template:
+    containers:
+    - name: elasticsearch
+      image: docker.elastic.co/elasticsearch/elasticsearch:7.10.0
+      env:
+        - name: discovery.type
+          value: single-node
+        - name: xpack.security.enabled
+          value: "false"
+        - name: ES_JAVA_OPTS
+          value: -Xms512m -Xmx512m
+      resources:
+        cpu: 1
+        memory: 2.0Gi
+      volumeMounts:
+        - volumeName: esdata
+          mountPath: /usr/share/elasticsearch/data
+    scale:
+      minReplicas: 1
+      maxReplicas: 1
