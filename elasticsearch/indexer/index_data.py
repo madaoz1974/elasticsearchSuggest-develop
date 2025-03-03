@@ -103,18 +103,17 @@ index_settings = {
     }
 }
 
-# デバッグ情報: インデックスが存在するか確認
-print("Checking if index exists...")
-try:
-    if not es.indices.exists(index='msprdb-index'):
-        print("Index does not exist. Creating index...")
-        es.indices.create(index='msprdb-index', body=index_settings)
-        print("Index created.")
-    else:
-        print("Index already exists.")
-except Exception as e:
-    print(f"Error checking/creating index: {e}")
-    raise
+# インデックスが存在するか確認と削除
+index_name = 'msprdb-index'
+if es.indices.exists(index=index_name):
+    print(f"Index {index_name} already exists. Deleting index...")
+    es.indices.delete(index=index_name)
+    print(f"Index {index_name} deleted.")
+
+# 新しいインデックスを作成
+print(f"Creating index: {index_name}")
+es.indices.create(index=index_name, body=index_settings)
+print(f"Index {index_name} created.")
 
 # データ取得およびインポート
 cursor = conn.cursor()
@@ -143,11 +142,11 @@ for row in rows:
             row_dict['Comments'] = []
     
     actions.append({
-        "_index": "msprdb-index",
+        "_index": index_name,
         "_source": row_dict
     })
 
-# デバッグ情報: アクションの構築が成功したか確認
+# デバッグ情報: インポートデータの数を表示
 print(f"Built {len(actions)} actions for bulk import.")
 
 if len(actions) > 0:
@@ -168,3 +167,172 @@ else:
 # 接続のクローズ
 conn.close()
 print("SQL connection closed.")
+
+# インデックス更新のために一時的に閉じる
+print(f"Closing index {index_name} for updates...")
+es.indices.close(index=index_name)
+
+try:
+    # テキスト解析用の日本語設定を更新
+    print("Updating analysis settings...")
+    analysis_settings = {
+        "analysis": {
+            "analyzer": {
+                "ja_analyzer": {
+                    "type": "custom",
+                    "tokenizer": "kuromoji_tokenizer",
+                    "filter": ["kuromoji_baseform", "kuromoji_part_of_speech", "ja_stop", "kuromoji_stemmer"]
+                }
+            },
+            "filter": {
+                "ja_stop": {
+                    "type": "stop",
+                    "stopwords": "_japanese_"
+                }
+            }
+        }
+    }
+    
+    es.indices.put_settings(body={"settings": analysis_settings}, index=index_name)
+    print("Analysis settings updated.")
+    
+    # サジェスト機能のためのマッピング追加
+    print("Adding suggestion fields to mapping...")
+    suggest_mapping = {
+        "properties": {
+            "Text": {
+                "type": "text",
+                "analyzer": "ja_analyzer",
+                "fields": {
+                    "suggest": {
+                        "type": "completion",
+                        "analyzer": "ja_analyzer"
+                    }
+                }
+            },
+            "Comments": {
+                "type": "nested",
+                "properties": {
+                    "Text": {
+                        "type": "text",
+                        "analyzer": "ja_analyzer",
+                        "fields": {
+                            "suggest": {
+                                "type": "completion",
+                                "analyzer": "ja_analyzer"
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    es.indices.put_mapping(body=suggest_mapping, index=index_name)
+    print("Suggestion mappings added.")
+    
+    # ベクトル検索フィールドの追加（オプション：モデルが必要な場合）
+    # Dense Vectorフィールドを追加する場合はコメントを解除
+    """
+    vector_mapping = {
+        "properties": {
+            "text_vector": {
+                "type": "dense_vector",
+                "dims": 768
+            },
+            "comments_vector": {
+                "type": "dense_vector",
+                "dims": 768
+            }
+        }
+    }
+    
+    es.indices.put_mapping(body=vector_mapping, index=index_name)
+    print("Vector fields added.")
+    """
+    
+    # インデックスを再オープン
+    print(f"Reopening index {index_name}...")
+    es.indices.open(index=index_name)
+    
+    # インデックスのリフレッシュ
+    print("Refreshing index...")
+    es.indices.refresh(index=index_name)
+    
+    print("Index update completed successfully!")
+    
+except Exception as e:
+    # エラーが発生した場合、インデックスを再オープンして終了
+    print(f"Error during index update: {e}")
+    try:
+        es.indices.open(index=index_name)
+        print(f"Index {index_name} reopened after error.")
+    except Exception as reopen_error:
+        print(f"Failed to reopen index: {reopen_error}")
+    raise
+
+# サジェストデータの準備
+print("Updating documents with suggestion data...")
+
+# バッチサイズ
+BATCH_SIZE = 100
+
+# スクロールを使用して全ドキュメントを取得
+scroll_response = es.search(
+    index=index_name,
+    scroll='2m',
+    size=BATCH_SIZE,
+    body={"query": {"match_all": {}}}
+)
+
+# 初期スクロールID
+scroll_id = scroll_response['_scroll_id']
+documents_processed = 0
+
+try:
+    while True:
+        # 結果を処理
+        batch = []
+        hits = scroll_response.get('hits', {}).get('hits', [])
+        
+        if not hits:
+            break
+            
+        for hit in hits:
+            doc = hit['_source']
+            doc_id = hit['_id']
+            
+            # ドキュメントの更新操作を作成
+            action = {
+                "_op_type": "update",
+                "_index": index_name,
+                "_id": doc_id,
+                "doc": {}
+            }
+            
+            # サジェストデータを追加（必要なフィールドがある場合）
+            # この例ではText値をそのままサジェストにも使用します
+            if 'Text' in doc and doc['Text']:
+                action['doc']['Text'] = doc['Text']
+            
+            batch.append(action)
+        
+        # バッチ更新を実行
+        if batch:
+            success, errors = helpers.bulk(es, batch, refresh=True)
+            documents_processed += success
+            print(f"Processed {documents_processed} documents...")
+            
+            if errors:
+                print(f"Errors during bulk update: {errors}")
+        
+        # 次のバッチを取得
+        scroll_response = es.scroll(scroll_id=scroll_id, scroll='2m')
+        scroll_id = scroll_response['_scroll_id']
+        
+finally:
+    # スクロールを解放
+    es.clear_scroll(scroll_id=scroll_id)
+
+print(f"Completed updating {documents_processed} documents.")
+print("Done! Elasticsearch index is now ready for suggestions and vector search.")

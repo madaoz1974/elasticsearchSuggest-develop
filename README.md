@@ -911,6 +911,19 @@ az containerapp create --name keyword-extractor --resource-group poc-search-sugg
 必要に応じて各コンテナのデバッグやログの確認を行い、動作状況を確認してください。問題が発生した場合は、詳細なログ情報を提供していただけると更なる支援が可能です。
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
 Azure Container Appsでkurmojiプラグイン付きのElasticsearchを作成するための手順を説明します。添付のリソース定義を見る限り、イメージは既にAzure Container Registryにプッシュされているようです（`crmsprpocjpe01.azurecr.io/elasticsearch-kuromoji:7.10.0`）。
 
 ## 1. Elasticsearch用のDockerfileの作成
