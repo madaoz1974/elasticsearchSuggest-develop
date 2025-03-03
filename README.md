@@ -619,12 +619,38 @@ az storage share-rm create --resource-group poc-search-suggest --storage-account
 
 az containerapp env storage set --access-mode ReadWrite --azure-file-account-name pocsearchsuggest --azure-file-account-key 2d63gqi60Vgy0LkMoMd4MFVJjgQYRD6zWjjavvWttWvxAchKO87Wc6kMKgnwGtaTtwR4zaKkjgD0+AStMVq8JA== --azure-file-share-name esdata --storage-name esdata --name poc-search-suggest-env --resource-group poc-search-suggest  --output table
 
-az containerapp create --name elasticsearch --resource-group poc-search-suggest  --environment poc-search-suggest-env --image docker.elastic.co/elasticsearch/elasticsearch:7.10.0 --target-port 9200 --ingress external --cpu 1 --memory 2.0Gi --env-vars "discovery.type=single-node" "xpack.security.enabled=false" "ES_JAVA_OPTS=-Xms512m -Xmx512m" --secrets storagekey=$STORAGE_KEY 
+STORAGE_KEY=$(az storage account keys list --resource-group poc-search-suggest --account-name pocsearchsuggest --query '[0].value' -o tsv) 
+ACR_PASSWORD=$(az acr credential show --name crmsprpocjpe01 --query "passwords[0].value" -o tsv)
+az containerapp create --name elasticsearch --resource-group poc-search-suggest --environment poc-search-suggest-env --image crmsprpocjpe01.azurecr.io/elasticsearch-kuromoji:7.10.0 --secrets storagekey=$STORAGE_KEY --target-port 9200 --ingress external --cpu 1 --memory 2.0Gi --min-replicas 0 --max-replicas 10 --env-vars "discovery.type=single-node" "xpack.security.enabled=false" "ES_JAVA_OPTS=-Xms512m -Xmx512m" --registry-server "crmsprpocjpe01.azurecr.io" --registry-username crmsprpocjpe01 --registry-password $ACR_PASSWORD
+
+az containerapp create --name elasticsearch --resource-group poc-search-suggest  --environment poc-search-suggest-env --image docker.elastic.co/elasticsearch/elasticsearch:7.10.0 --target-port 9200 --ingress external --cpu 1 --memory 2.0Gi --env-vars "discovery.type=single-node" "xpack.security.enabled=false" "ES_JAVA_OPTS=-Xms512m -Xmx512m" --secrets storagekey=$STORAGE_KEY
 
 az containerapp show --name elasticsearch --resource-group poc-search-suggest  --output yaml > elasticsearch_export.yaml
 
-az containerapp update --name elasticsearch  --resource-group poc-search-suggest --yaml elasticsearch_export.yaml --output table
+az containerapp update --name elasticsearch --resource-group poc-search-suggest --yaml elasticsearch_export.yaml --output table
 ```  
+
+トラブルシューティング（ContainerAppsの起動に失敗：ACRからのpull時に認証エラー）
+```bash
+# システム割り当てマネージドIDを有効化
+az containerapp identity assign --name elasticsearch --resource-group poc-search-suggest --system-assigned
+
+# マネージドIDにACRへのPull権限を付与
+IDENTITY_PRINCIPAL_ID=$(az containerapp identity show --name elasticsearch --resource-group poc-search-suggest --query principalId -o tsv)
+
+ACR_ID=$(az acr show --name crmsprpocjpe01 --query id -o tsv)
+
+az role assignment create --assignee $IDENTITY_PRINCIPAL_ID --scope $ACR_ID --role AcrPull
+
+# レジストリ設定を更新（マネージドIDを使用するように）
+az containerapp registry set --name elasticsearch --resource-group poc-search-suggest --server crmsprpocjpe01.azurecr.io --identity system
+```
+コンテナーレジストリへのアクセスが制限されているためContainerAppsからのアクセスに限り許可する
+```bash
+for ip in 4.216.133.30 20.243.233.234 20.243.233.244 20.243.233.253 20.243.234.117 20.243.234.1 20.243.234.5 20.243.234.50 20.243.233.204 20.243.235.3 20.48.86.170 20.48.86.160 20.48.86.154 20.48.86.165 48.218.81.17 48.218.80.248 48.218.80.238 48.218.81.11 48.218.81.1 48.218.80.246 20.18.118.34 20.18.117.222 20.18.118.37 20.18.118.36 20.18.118.32 20.18.116.214 20.18.118.33 20.18.117.223 20.18.118.35 20.18.232.213 20.210.72.88 20.210.72.103 20.210.72.109 20.210.72.73 48.218.158.62 48.218.158.84 48.218.158.83 48.218.158.66 48.218.158.55 48.218.158.81 130.33.185.6; do
+  az acr network-rule add --name crmsprpocjpe01 --ip-address $ip
+done
+```
 
 ---  
      
@@ -883,3 +909,180 @@ az containerapp create --name keyword-extractor --resource-group poc-search-sugg
 これにより、インデックス設定とキーワード抽出のための別々のコンテナアプリケーションがデプロイされ、相互に独立して動作するようになります。また、必要な環境変数も設定されていますので、適宜調整を行ってください。  
    
 必要に応じて各コンテナのデバッグやログの確認を行い、動作状況を確認してください。問題が発生した場合は、詳細なログ情報を提供していただけると更なる支援が可能です。
+
+
+Azure Container Appsでkurmojiプラグイン付きのElasticsearchを作成するための手順を説明します。添付のリソース定義を見る限り、イメージは既にAzure Container Registryにプッシュされているようです（`crmsprpocjpe01.azurecr.io/elasticsearch-kuromoji:7.10.0`）。
+
+## 1. Elasticsearch用のDockerfileの作成
+
+まず、kuromojiプラグイン付きのElasticsearchイメージを作成するためのDockerfileを作成しましょう：
+
+```bash
+mkdir -p elasticsearch-kuromoji
+cd elasticsearch-kuromoji
+
+# Dockerfileの作成
+cat > Dockerfile << 'EOF'
+FROM docker.elastic.co/elasticsearch/elasticsearch:7.10.0
+
+# kuromojiプラグインをインストール
+RUN elasticsearch-plugin install analysis-kuromoji
+
+# 設定をコピー
+COPY elasticsearch.yml /usr/share/elasticsearch/config/
+
+# 権限を設定
+USER root
+RUN chown -R elasticsearch:elasticsearch /usr/share/elasticsearch/config/
+USER elasticsearch
+EOF
+
+# elasticsearch.ymlの作成
+cat > elasticsearch.yml << 'EOF'
+cluster.name: docker-cluster
+network.host: 0.0.0.0
+http.port: 9200
+discovery.type: single-node
+xpack.security.enabled: false
+EOF
+```
+
+## 2. イメージのビルドとACRへのプッシュ
+
+次に、イメージをビルドしてAzure Container Registryにプッシュします：
+
+```bash
+# イメージをビルド
+docker build -t crmsprpocjpe01.azurecr.io/elasticsearch-kuromoji:7.10.0 .
+
+# ACRにログイン
+az acr login --name crmsprpocjpe01
+
+# イメージをプッシュ
+docker push crmsprpocjpe01.azurecr.io/elasticsearch-kuromoji:7.10.0
+```
+
+## 3. Azure Container Appsでのデプロイスクリプト
+
+Azure CLIを使用してElasticsearchをデプロイするスクリプトを作成します：
+
+```bash
+# 環境変数の設定
+RESOURCE_GROUP="poc-search-suggest"
+ENVIRONMENT="poc-search-suggest-env"
+APP_NAME="elasticsearch"
+IMAGE="crmsprpocjpe01.azurecr.io/elasticsearch-kuromoji:7.10.0"
+ACR_NAME="crmsprpocjpe01"
+
+# ACRのパスワードを取得（もしくは手動で設定）
+ACR_PASSWORD=$(az acr credential show --name $ACR_NAME --query "passwords[0].value" -o tsv)
+
+# Elasticsearchアプリを作成
+az containerapp create \
+  --name $APP_NAME \
+  --resource-group $RESOURCE_GROUP \
+  --environment $ENVIRONMENT \
+  --image $IMAGE \
+  --registry-server "$ACR_NAME.azurecr.io" \
+  --registry-username $ACR_NAME \
+  --registry-password $ACR_PASSWORD \
+  --target-port 9200 \
+  --ingress external \
+  --cpu 1 \
+  --memory 2.0Gi \
+  --min-replicas 0 \
+  --max-replicas 10 \
+  --env-vars "discovery.type=single-node" "xpack.security.enabled=false" "ES_JAVA_OPTS=-Xms512m -Xmx512m" \
+  --volumes name=esdata,mount-path=/usr/share/elasticsearch/data,storage-type=AzureFile
+```
+
+Azure Fileストレージの作成手順が必要な場合は以下のようになります：
+
+```bash
+# ストレージアカウントが必要な場合は作成
+az storage account create \
+  --name pocssestorage \
+  --resource-group $RESOURCE_GROUP \
+  --location japaneast \
+  --sku Standard_LRS
+
+# ストレージアカウントキーを取得
+STORAGE_KEY=$(az storage account keys list --account-name pocssestorage --query "[0].value" -o tsv)
+
+# ファイル共有を作成
+az storage share create \
+  --name esdata \
+  --account-name pocssestorage \
+  --account-key $STORAGE_KEY
+
+# Container Apps環境にストレージをマウント
+az containerapp env storage set \
+  --name $ENVIRONMENT \
+  --resource-group $RESOURCE_GROUP \
+  --storage-name esdata \
+  --azure-file-account-name pocssestorage \
+  --azure-file-account-key $STORAGE_KEY \
+  --azure-file-share-name esdata \
+  --access-mode ReadWrite
+```
+
+既にストレージが設定されている場合は、上記のストレージ関連のコマンドはスキップできます。
+
+## 4. トラブルシューティング
+
+デプロイに失敗する場合、以下の項目を確認してください：
+
+1. **リソースの制限**：メモリやCPUが不足している可能性があります。設定値を調整してみてください。
+
+2. **ログの確認**：
+   ```bash
+   az containerapp logs show \
+     --name $APP_NAME \
+     --resource-group $RESOURCE_GROUP \
+     --follow
+   ```
+
+3. **リビジョンの確認**：
+   ```bash
+   az containerapp revision list \
+     --name $APP_NAME \
+     --resource-group $RESOURCE_GROUP
+   ```
+
+4. **環境変数の確認**：
+   ```bash
+   az containerapp show \
+     --name $APP_NAME \
+     --resource-group $RESOURCE_GROUP \
+     --query "properties.template.containers[0].env"
+   ```
+
+## 5. クリーンアップと再デプロイ
+
+問題が解決しない場合は、既存のコンテナアプリを削除して新しく作成することも検討してください：
+
+```bash
+# 既存のコンテナアプリを削除
+az containerapp delete \
+  --name $APP_NAME \
+  --resource-group $RESOURCE_GROUP \
+  --yes
+
+# 新しいコンテナアプリを作成（上記の手順3を使用）
+```
+
+## 6. Azure Container Appsとローカル環境の連携
+
+ローカル環境と Azure Container Apps環境を連携させるには、`.env` ファイルで適切なElasticsearchエンドポイントを指定してください：
+
+```bash
+# コンテナアプリのFQDNを取得
+ELASTICSEARCH_FQDN=$(az containerapp show \
+  --name $APP_NAME \
+  --resource-group $RESOURCE_GROUP \
+  --query "properties.configuration.ingress.fqdn" -o tsv)
+
+echo "ELASTICSEARCH_HOST=https://$ELASTICSEARCH_FQDN:443" > .env
+```
+
+これらのステップに従えば、kuromjiプラグイン付きのElasticsearchをAzure Container Appsに正常にデプロイでき、Kibanaと連携させることができるはずです。デプロイ後に何か問題が発生した場合は、ログを確認して具体的なエラーメッセージに基づいてトラブルシューティングを行ってください。

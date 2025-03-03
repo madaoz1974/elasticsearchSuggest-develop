@@ -4,6 +4,8 @@ from elasticsearch import helpers
 import os
 import urllib3
 import warnings
+import re
+import json
 
 # 自己署名証明書の警告を無効化（本番環境では注意）
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -23,32 +25,36 @@ except Exception as e:
     raise
 
 # ElasticSearch設定
-# 接続タイムアウトの増加と、verify_certs=Falseの追加
+# 環境変数からホスト名を取得し、ポート443を指定
 es_host = os.environ['ELASTICSEARCH_HOST']
-print(f"Connecting to Elasticsearch at {es_host}...")
+print(f"Original Elasticsearch host: {es_host}")
 
-# HTTPかHTTPSかの確認
-is_https = es_host.startswith('https://')
+# URLからスキームとホスト名を抽出
+url_match = re.match(r'(https?://)([^:/]+)(:[0-9]+)?(/.*)?', es_host)
+if url_match:
+    scheme = url_match.group(1)
+    hostname = url_match.group(2)
+    # ポート443を明示的に使用
+    es_conn_url = f"{scheme}{hostname}:443"
+    print(f"Using Elasticsearch at: {es_conn_url}")
+else:
+    es_conn_url = es_host
+    print(f"Could not parse URL, using as is: {es_conn_url}")
 
 try:
-    # タイムアウト設定を増やし、HTTPSの場合は証明書検証を無効化
-    if is_https:
-        es = elasticsearch.Elasticsearch(
-            [es_host], 
-            timeout=30, 
-            max_retries=5, 
-            retry_on_timeout=True,
-            verify_certs=False,  # 自己署名証明書や証明書検証の問題を回避
-        )
-    else:
-        es = elasticsearch.Elasticsearch(
-            [es_host], 
-            timeout=30, 
-            max_retries=5, 
-            retry_on_timeout=True
-        )
+    # ポート443への接続を試みる
+    es = elasticsearch.Elasticsearch(
+        [es_conn_url], 
+        timeout=30, 
+        max_retries=5, 
+        retry_on_timeout=True,
+        verify_certs=False,  # 自己署名証明書の検証をスキップ
+        # ポート番号のバリデーションを回避するためのカスタム設定
+        port=443
+    )
     
     # 接続テスト
+    print("Testing Elasticsearch connection...")
     if es.ping():
         print("Successfully connected to Elasticsearch.")
     else:
@@ -115,15 +121,31 @@ cursor = conn.cursor()
 print("Executing SQL query...")
 cursor.execute("SELECT * FROM Mspr.PostCommentView")
 columns = [column[0] for column in cursor.description]
+rows = cursor.fetchall()
 
 print("Building actions for bulk import...")
-actions = [
-    {
+actions = []
+for row in rows:
+    # 行データを辞書に変換
+    row_dict = dict(zip(columns, row))
+    
+    # Commentsフィールドが文字列であれば、JSONオブジェクトに変換
+    if 'Comments' in row_dict and row_dict['Comments'] is not None:
+        try:
+            if isinstance(row_dict['Comments'], str):
+                row_dict['Comments'] = json.loads(row_dict['Comments'])
+            # JSON文字列でもオブジェクトでもない場合は空のリストに設定
+            elif not isinstance(row_dict['Comments'], (list, dict)):
+                row_dict['Comments'] = []
+        except json.JSONDecodeError:
+            print(f"Warning: Could not parse Comments JSON for PostId: {row_dict.get('PostId')}")
+            # パースできない場合は空のリストに設定
+            row_dict['Comments'] = []
+    
+    actions.append({
         "_index": "msprdb-index",
-        "_source": dict(zip(columns, row))
-    }
-    for row in cursor.fetchall()
-]
+        "_source": row_dict
+    })
 
 # デバッグ情報: アクションの構築が成功したか確認
 print(f"Built {len(actions)} actions for bulk import.")
@@ -131,8 +153,15 @@ print(f"Built {len(actions)} actions for bulk import.")
 if len(actions) > 0:
     # バルクインポートを実行
     print("Starting bulk import...")
-    helpers.bulk(es, actions)
-    print("Data import completed.")
+    try:
+        # チャンクサイズを小さくして処理
+        success, failed = helpers.bulk(es, actions, chunk_size=100, max_retries=5, raise_on_error=False)
+        print(f"Data import completed. Success: {success}, Failed: {len(failed) if failed else 0}")
+        
+        if failed:
+            print(f"First few errors: {failed[:3]}")
+    except Exception as e:
+        print(f"Error during bulk import: {e}")
 else:
     print("No data to import.")
 
