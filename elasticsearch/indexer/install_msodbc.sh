@@ -11,3 +11,7 @@ curl https://packages.microsoft.com/config/debian/10/prod.list > /etc/apt/source
 # パッケージリストの更新とインストール  
 apt-get update  
 ACCEPT_EULA=Y apt-get install -y msodbcsql17 mssql-tools unixodbc-dev  
+
+# MeCabの設定ファイルを作成
+mkdir -p /usr/local/etc/
+echo "dicdir = /usr/lib/x86_64-linux-gnu/mecab/dic/mecab-ipadic-utf8" > /usr/local/etc/mecabrc

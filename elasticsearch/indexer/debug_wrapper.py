@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-index_data.pyのデバッグ用ラッパースクリプト
+Azure SQL DatabaseよりKeywordとhasutaguを抽出してElasticSearchのindex生成するスクリプト
 """
 import sys
 import traceback
@@ -8,7 +8,7 @@ import time
 import os
 
 print("="*80)
-print("デバッグラッパースクリプト開始")
+print("Azure SQL DatabaseよりKeywordとhasutaguを抽出してElasticSearchのindex生成するスクリプト開始")
 print("Python バージョン:", sys.version)
 print("現在の作業ディレクトリ:", os.getcwd())
 print("環境変数:")

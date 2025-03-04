@@ -17,7 +17,8 @@ RUN chmod +x ./install_msodbc.sh
 
 # 必要なパッケージのインストール
 RUN ./install_msodbc.sh && \
-    apt-get install -y unixodbc && \
+    apt-get update && \
+    apt-get install -y unixodbc mecab libmecab-dev mecab-ipadic-utf8 swig && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 

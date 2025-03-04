@@ -6,6 +6,8 @@ import urllib3
 import warnings
 import re
 import json
+from collections import Counter
+import MeCab  # 日本語形態素解析用
 
 # 自己署名証明書の警告を無効化（本番環境では注意）
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -63,7 +65,7 @@ except Exception as e:
     print(f"Failed to connect to Elasticsearch: {e}")
     raise
 
-# インデックス設定
+# インデックス設定 - keywordsフィールドも適切に設定
 index_settings = {
     "settings": {
         "analysis": {
@@ -85,8 +87,28 @@ index_settings = {
             "Text": {"type": "text", "analyzer": "ja_analyzer"},
             "DeletedAt": {"type": "date"},
             "PostStatus": {"type": "integer"},
-            "HashTags": {"type": "text", "analyzer": "ja_analyzer"},
-            "Keywords": {"type": "text", "analyzer": "ja_analyzer"},
+            # HashTagsフィールドとして明示的に定義
+            "HashTags": {
+                "type": "text", 
+                "analyzer": "ja_analyzer",
+                "fields": {
+                    "keyword": {
+                        "type": "keyword",
+                        "ignore_above": 256
+                    }
+                }
+            },
+            # Keywordsフィールドとして明示的に定義
+            "Keywords": {
+                "type": "text", 
+                "analyzer": "ja_analyzer",
+                "fields": {
+                    "keyword": {
+                        "type": "keyword",
+                        "ignore_above": 256
+                    }
+                }
+            },
             "Comments": {
                 "type": "nested",
                 "properties": {
@@ -115,9 +137,89 @@ print(f"Creating index: {index_name}")
 es.indices.create(index=index_name, body=index_settings)
 print(f"Index {index_name} created.")
 
+# MeCabの初期化
+print("Initializing MeCab for keyword extraction...")
+try:
+    mecab = MeCab.Tagger("-Ochasen")
+except Exception as e:
+    print(f"Failed to initialize MeCab: {e}")
+    print("Falling back to simple keyword extraction method")
+    mecab = None
+
+# テキストからキーワードを抽出する関数
+def extract_keywords(text, max_keywords=10):
+    if not text:
+        return []
+    
+    try:
+        # MeCabを使った形態素解析による高度なキーワード抽出
+        if mecab:
+            # 形態素解析を実行
+            parsed = mecab.parse(text)
+            words = []
+            
+            # 名詞、動詞の基本形を抽出
+            for line in parsed.split('\n'):
+                if line == 'EOS' or line == '':
+                    continue
+                    
+                parts = line.split('\t')
+                if len(parts) >= 4:
+                    word = parts[0]
+                    pos = parts[3].split('-')[0]  # 品詞
+                    
+                    # 名詞、動詞、形容詞を抽出（一般的なキーワードは名詞が多い）
+                    if pos in ['名詞', '動詞', '形容詞'] and len(word) > 1:
+                        words.append(word)
+            
+            # 頻度でカウント
+            word_counts = Counter(words)
+            
+            # 最も頻度の高いキーワードを返す
+            return [word for word, count in word_counts.most_common(max_keywords)]
+        else:
+            # MeCabが使えない場合のフォールバック: 単純な分割と頻度カウント
+            # 日本語と英語の混在テキストに対応
+            words = []
+            
+            # 英数字を含む「単語」を抽出（正規表現で単語の区切りを検出）
+            english_words = re.findall(r'[a-zA-Z0-9_]+', text)
+            words.extend([w for w in english_words if len(w) > 1])
+            
+            # 日本語文字の塊を抽出
+            japanese_chars = re.sub(r'[a-zA-Z0-9_\s.,!?()[\]{}:;"\'<>\/\\|@#$%^&*~`+=_-]', ' ', text)
+            
+            # 空白で分割して短すぎる単語を除外
+            japanese_words = [w for w in japanese_chars.split() if len(w) > 1]
+            words.extend(japanese_words)
+            
+            # 頻度でカウント
+            word_counts = Counter(words)
+            
+            # 最も頻度の高いキーワードを返す
+            return [word for word, count in word_counts.most_common(max_keywords)]
+            
+    except Exception as e:
+        print(f"Error in keyword extraction: {e}")
+        return []
+
+# 文字列からハッシュタグを抽出する関数
+def extract_hashtags(text):
+    if not text:
+        return []
+    
+    try:
+        # #で始まる単語をハッシュタグとして抽出
+        hashtags = re.findall(r'#(\w+)', text)
+        return hashtags
+    except Exception as e:
+        print(f"Error in hashtag extraction: {e}")
+        return []
+
 # データ取得およびインポート
 cursor = conn.cursor()
 print("Executing SQL query...")
+# 必要に応じて、KeywordsカラムがSQL側で正しく取得できるか確認するためのクエリを修正
 cursor.execute("SELECT * FROM Mspr.PostCommentView")
 columns = [column[0] for column in cursor.description]
 rows = cursor.fetchall()
@@ -127,6 +229,53 @@ actions = []
 for row in rows:
     # 行データを辞書に変換
     row_dict = dict(zip(columns, row))
+    
+    # データの前処理を行う
+    
+    # *** テキストからキーワードとハッシュタグを抽出 ***
+    if 'Text' in row_dict and row_dict['Text']:
+        text = row_dict['Text']
+        
+        # キーワードの抽出
+        extracted_keywords = extract_keywords(text)
+        
+        # 既存のKeywordsフィールドがなければ作成、あれば上書き
+        row_dict['Keywords'] = extracted_keywords
+        
+        # ハッシュタグの抽出
+        extracted_hashtags = extract_hashtags(text)
+        
+        # 既存のHashTagsフィールドがなければ作成、あれば上書き
+        if extracted_hashtags:
+            row_dict['HashTags'] = extracted_hashtags
+    
+    # 既存のKeywordsフィールドが文字列であれば、適切に処理
+    elif 'Keywords' in row_dict and row_dict['Keywords'] is not None:
+        try:
+            # カンマ区切りの場合、リストに変換
+            if isinstance(row_dict['Keywords'], str):
+                if ',' in row_dict['Keywords']:
+                    row_dict['Keywords'] = [k.strip() for k in row_dict['Keywords'].split(',')]
+                # JSON文字列の可能性があればパース
+                elif row_dict['Keywords'].startswith('[') and row_dict['Keywords'].endswith(']'):
+                    row_dict['Keywords'] = json.loads(row_dict['Keywords'])
+        except json.JSONDecodeError:
+            print(f"Warning: Could not parse Keywords for PostId: {row_dict.get('PostId')}")
+            # 問題がある場合でも、テキストとして保持
+    
+    # 既存のHashTagsフィールドが文字列であれば、適切に処理
+    if 'HashTags' in row_dict and row_dict['HashTags'] is not None and not extracted_hashtags:
+        try:
+            # カンマ区切りの場合、リストに変換
+            if isinstance(row_dict['HashTags'], str):
+                if ',' in row_dict['HashTags']:
+                    row_dict['HashTags'] = [h.strip() for h in row_dict['HashTags'].split(',')]
+                # JSON文字列の可能性があればパース
+                elif row_dict['HashTags'].startswith('[') and row_dict['HashTags'].endswith(']'):
+                    row_dict['HashTags'] = json.loads(row_dict['HashTags'])
+        except json.JSONDecodeError:
+            print(f"Warning: Could not parse HashTags for PostId: {row_dict.get('PostId')}")
+            # 問題がある場合でも、テキストとして保持
     
     # Commentsフィールドが文字列であれば、JSONオブジェクトに変換
     if 'Comments' in row_dict and row_dict['Comments'] is not None:
@@ -140,6 +289,12 @@ for row in rows:
             print(f"Warning: Could not parse Comments JSON for PostId: {row_dict.get('PostId')}")
             # パースできない場合は空のリストに設定
             row_dict['Comments'] = []
+    
+    # デバッグ出力: Keywordsフィールドの値をサンプルログ
+    if 'PostId' in row_dict and 'Keywords' in row_dict:
+        # 1つめのデータだけログ出力
+        if len(actions) == 0:
+            print(f"Sample Keywords for PostId {row_dict['PostId']}: {row_dict.get('Keywords')}")
     
     actions.append({
         "_index": index_name,
@@ -196,11 +351,31 @@ try:
     es.indices.put_settings(body={"settings": analysis_settings}, index=index_name)
     print("Analysis settings updated.")
     
-    # サジェスト機能のためのマッピング追加
+    # サジェスト機能のためのマッピング追加 - Keywordsフィールドも対象に
     print("Adding suggestion fields to mapping...")
     suggest_mapping = {
         "properties": {
             "Text": {
+                "type": "text",
+                "analyzer": "ja_analyzer",
+                "fields": {
+                    "suggest": {
+                        "type": "completion",
+                        "analyzer": "ja_analyzer"
+                    }
+                }
+            },
+            "Keywords": {
+                "type": "text",
+                "analyzer": "ja_analyzer",
+                "fields": {
+                    "suggest": {
+                        "type": "completion",
+                        "analyzer": "ja_analyzer"
+                    }
+                }
+            },
+            "HashTags": {
                 "type": "text",
                 "analyzer": "ja_analyzer",
                 "fields": {
@@ -311,9 +486,16 @@ try:
             }
             
             # サジェストデータを追加（必要なフィールドがある場合）
-            # この例ではText値をそのままサジェストにも使用します
             if 'Text' in doc and doc['Text']:
                 action['doc']['Text'] = doc['Text']
+            
+            # Keywordsフィールドの処理を追加
+            if 'Keywords' in doc and doc['Keywords']:
+                action['doc']['Keywords'] = doc['Keywords']
+                
+            # HashTagsフィールドの処理を追加
+            if 'HashTags' in doc and doc['HashTags']:
+                action['doc']['HashTags'] = doc['HashTags']
             
             batch.append(action)
         
@@ -336,3 +518,30 @@ finally:
 
 print(f"Completed updating {documents_processed} documents.")
 print("Done! Elasticsearch index is now ready for suggestions and vector search.")
+
+# 実際にKeywordsフィールドが正しく格納されているか確認するためのクエリを実行
+print("Checking if Keywords field is properly indexed...")
+try:
+    # サンプルクエリを実行
+    sample_query = {
+        "size": 5,
+        "_source": ["PostId", "Keywords"],
+        "query": {
+            "exists": {
+                "field": "Keywords"
+            }
+        }
+    }
+    
+    result = es.search(index=index_name, body=sample_query)
+    hit_count = result['hits']['total']['value'] if 'hits' in result and 'total' in result['hits'] else 0
+    
+    print(f"Found {hit_count} documents with Keywords field")
+    
+    # サンプルのドキュメントを表示
+    if hit_count > 0:
+        print("Sample documents with Keywords:")
+        for hit in result['hits']['hits']:
+            print(f"PostId: {hit['_source'].get('PostId')}, Keywords: {hit['_source'].get('Keywords')}")
+except Exception as e:
+    print(f"Error checking Keywords field: {e}")

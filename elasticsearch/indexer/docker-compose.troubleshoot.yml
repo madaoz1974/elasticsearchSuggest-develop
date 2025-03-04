@@ -6,7 +6,7 @@ services:
       context: .
       dockerfile: Dockerfile
       platforms:
-        - linux/arm64
+        - linux/amd64
     env_file:
       - .env
     volumes:
