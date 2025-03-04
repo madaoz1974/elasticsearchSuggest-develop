@@ -1,0 +1,4 @@
+pyodbc
+elasticsearch==7.10.0
+urllib3<2.0.0
+mecab-python3

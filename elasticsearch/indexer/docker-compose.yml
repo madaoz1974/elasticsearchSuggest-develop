@@ -1,16 +1,19 @@
-version: '3'
-
-services:
-  indexer:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      platforms:
-        - linux/amd64
-    env_file:
-      - .env
-    volumes:
-      - .:/app  # ローカルのコードをコンテナにマウント
-    command: /bin/bash  # コンテナ起動時にbashを実行
-    stdin_open: true  # STDIN を開く
-    tty: true  # 疑似TTYを割り当て
+services:  
+  indexer:  
+    build:  
+      context: .  
+      dockerfile: Dockerfile  
+    platform: linux/amd64  
+    env_file:  
+      - .env  
+    volumes:  
+      - .:/app  
+    deploy:  
+      resources:  
+        limits:  
+          memory: 4G  
+        reservations:  
+          memory: 2G  
+    command: python /app/debug_wrapper.py  
+    stdin_open: true  
+    tty: true  

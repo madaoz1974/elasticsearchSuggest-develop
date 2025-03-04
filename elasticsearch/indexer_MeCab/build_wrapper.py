@@ -1,11 +1,10 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 """
-Azure SQL DatabaseよりKeywordとhasutaguを抽出してElasticSearchのindex生成するスクリプト
+Buildラッパースクリプト - 主要コンポーネントのテストと診断を行います
 """
-import sys
-import traceback
-import time
+
 import os
+import sys
 import subprocess
 import platform
 import importlib.util
@@ -111,8 +110,10 @@ def check_python_dependencies():
             print(f"✗ {package} is NOT installed")
 
 def main():
-    print("="*80)
-    print("Azure SQL DatabaseよりKeywordとhasutaguを抽出してElasticSearchのindex生成するスクリプト開始")
+    """メイン実行関数"""
+    print("=" * 50)
+    print("Docker Container Diagnostics")
+    print("=" * 50)
     
     # 各チェックを実行
     check_environment()
@@ -131,25 +132,11 @@ def main():
     print("\n" + "-" * 50)
     
     print("Diagnostics completed.")
-    print("="*80)
+    
+    # インタラクティブシェルの開始
+    print("\nStarting interactive Python shell. Press Ctrl+D to exit.")
+    import code
+    code.interact(local=locals())
 
-    try:
-        print("index_data.pyを実行します...")
-        # オリジナルのスクリプトをインポート
-        import index_data
-        print("index_data.pyの実行が完了しました")
-    except Exception as e:
-        print("エラーが発生しました:")
-        print(f"エラータイプ: {type(e).__name__}")
-        print(f"エラーメッセージ: {e}")
-        print("\n詳細なスタックトレース:")
-        traceback.print_exc()
-        
-    print("="*80)
-    print("デバッグラッパースクリプト終了")
-    print("コンテナは実行を継続します...")
-    print("(Ctrl+Cで強制終了できます)")
-
-    # コンテナがすぐに終了しないようにする
-    while True:
-        time.sleep(60)
+if __name__ == "__main__":
+    main()

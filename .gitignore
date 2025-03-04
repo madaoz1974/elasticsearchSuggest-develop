@@ -210,3 +210,4 @@ Carthage/Build/
 
 # SwiftUIのリソースはGitの管理対象とする
 # .xcassets（画像アセット）、.storyboard（ストーリーボード）などは含めるため除外しない
+doc/task/TASK*.md

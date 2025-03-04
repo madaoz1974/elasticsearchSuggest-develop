@@ -1,5 +1,3 @@
-version: '3'
-
 services:
   indexer:
     build:
@@ -11,8 +9,15 @@ services:
       - .env
     volumes:
       - .:/app  # ローカルのコードをコンテナにマウント
+    # リソース制限を追加
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+        reservations:
+          memory: 2G
     # デバッグラッパースクリプトを使用
-    command: python /app/debug_wrapper.py
+    command: python /app/build_wrapper.py
     # 対話モードを有効化
     stdin_open: true
     tty: true

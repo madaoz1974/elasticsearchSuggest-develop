@@ -1,30 +1,68 @@
-FROM --platform=linux/amd64 python:3.9-buster
-
-# 環境変数の設定
-ENV DEBIAN_FRONTEND=noninteractive
-ENV DEBCONF_NOWARNINGS=yes
-ENV PATH="/opt/mssql-tools/bin:${PATH}"
-ENV PYTHONUNBUFFERED=1
-
-WORKDIR /app
-
-COPY requirements.txt .
-COPY index_data.py .
-COPY install_msodbc.sh .
-
-# install_msodbc.shに実行権限を付与
-RUN chmod +x ./install_msodbc.sh
-
-# 必要なパッケージのインストール
-RUN ./install_msodbc.sh && \
-    apt-get update && \
-    apt-get install -y unixodbc mecab libmecab-dev mecab-ipadic-utf8 swig && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
-
-# Pythonパッケージのインストール
-RUN pip install --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
-
-# verbose実行オプションを追加
-CMD ["python", "-v", "/app/index_data.py"]
+# ベースイメージをDebian 11（bullseye）に指定  
+FROM python:3.9-slim-bullseye  
+  
+# 環境変数の設定  
+ENV DEBIAN_FRONTEND=noninteractive  
+ENV DEBCONF_NOWARNINGS=yes  
+ENV PATH="/opt/mssql-tools/bin:${PATH}"  
+ENV PYTHONUNBUFFERED=1  
+  
+# 作業ディレクトリの設定  
+WORKDIR /app  
+  
+# 必要なファイルをコピー  
+COPY requirements.txt .  
+COPY index_data.py .  
+COPY install_msodbc.sh .  
+  
+# install_msodbc.shに実行権限を付与  
+RUN chmod +x ./install_msodbc.sh  
+  
+# msodbcsql17のインストール  
+RUN ./install_msodbc.sh  
+  
+# 必要なビルドツールと依存パッケージのインストール  
+RUN apt-get update && \  
+    apt-get install -y --no-install-recommends \  
+        build-essential \  
+        autoconf \  
+        automake \  
+        libtool \  
+        curl \  
+        git \  
+        swig \  
+        libmecab-dev \  
+        pkg-config \  
+        fontconfig \  
+        libfontconfig1 \  
+        fontconfig-config \  
+        libgd3 \  
+        libc-devtools && \  
+    apt-get clean && \  
+    rm -rf /var/lib/apt/lists/*  
+  
+# MeCabのソースをクローンしてビルド  
+RUN cd /tmp && \  
+    git clone https://github.com/taku910/mecab.git && \  
+    cd mecab/mecab && \  
+    ./configure --enable-utf8-only && \  
+    make && make install  
+  
+# Mecab IPADIC Neologdのソースをクローンしてビルド  
+RUN cd /tmp && \  
+    git clone https://github.com/neologd/mecab-ipadic-neologd.git && \  
+    cd mecab-ipadic-neologd/mecab-ipadic-neologd && \  
+    ./bin/install-mecab-ipadic-neologd -n -y && \  
+    # 辞書ディレクトリを設定  
+    echo "dicdir = $(mecab-config --dicdir)/mecab-ipadic-neologd" > /usr/local/etc/mecabrc && \  
+    # 一時ファイルのクリーンアップ  
+    rm -rf /tmp/mecab* /tmp/mecab-ipadic-neologd* && \  
+    apt-get clean && \  
+    rm -rf /var/lib/apt/lists/*  
+  
+# Pythonパッケージのインストール  
+RUN pip install --upgrade pip && \  
+    pip install --no-cache-dir -r requirements.txt  
+  
+# コンテナ起動時に実行するコマンド  
+CMD ["python", "-v", "/app/index_data.py"]  

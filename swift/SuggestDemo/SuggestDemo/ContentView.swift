@@ -372,7 +372,7 @@ class ElasticSearchService {
                 "text-suggest": [
                     "prefix": text,
                     "completion": [
-                        "field": "Text.suggest",
+                        "field": "Keywords.suggest",
                         "size": 5,
                         "fuzzy": [
                             "fuzziness": "AUTO"
