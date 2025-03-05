@@ -14,6 +14,5 @@ services:
           memory: 4G  
         reservations:  
           memory: 2G  
-    command: python /app/build_wrapper.py  
     stdin_open: true  
     tty: true  

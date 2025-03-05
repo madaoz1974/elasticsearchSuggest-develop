@@ -11,7 +11,7 @@ WORKDIR /app
   
 # 必要なファイルをコピー  
 COPY requirements.txt ./  
-COPY build_wrapper.py ./
+COPY build_wrapper.py ./  
 COPY index_data.py ./  
 COPY install_msodbc.sh ./  
   
@@ -96,4 +96,4 @@ RUN pip install --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt  
   
 # コンテナ起動時に実行するコマンド  
-CMD ["python", "-v", "/app/index_data.py"]  
+CMD ["python", "-v", "/app/build_wrapper.py"]  
