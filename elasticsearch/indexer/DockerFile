@@ -1,24 +1,27 @@
-# ベースイメージをDebian 11（bullseye）に指定  
-FROM python:3.9-slim-bullseye  
+FROM python:3.9-bullseye  
   
 # 環境変数の設定  
-ENV DEBIAN_FRONTEND=noninteractive  
-ENV DEBCONF_NOWARNINGS=yes  
-ENV PATH="/opt/mssql-tools/bin:${PATH}"  
-ENV PYTHONUNBUFFERED=1  
+ENV DEBIAN_FRONTEND=noninteractive \  
+    DEBCONF_NOWARNINGS=yes \  
+    PATH="/opt/mssql-tools/bin:${PATH}" \  
+    PYTHONUNBUFFERED=1  
   
 # 作業ディレクトリの設定  
 WORKDIR /app  
   
 # 必要なファイルをコピー  
-COPY requirements.txt .  
-COPY index_data.py .  
-COPY install_msodbc.sh .  
+COPY requirements.txt ./  
+COPY build_wrapper.py ./
+COPY index_data.py ./  
+COPY install_msodbc.sh ./  
   
-# install_msodbc.shに実行権限を付与  
+# install_msodbc.sh に実行権限を付与  
 RUN chmod +x ./install_msodbc.sh  
   
-# msodbcsql17のインストール  
+# スクリプト内容の確認（デバッグ用）  
+RUN echo "### Contents of install_msodbc.sh ###" && cat install_msodbc.sh  
+  
+# msodbcsql18 のインストール  
 RUN ./install_msodbc.sh  
   
 # 必要なビルドツールと依存パッケージのインストール  
@@ -37,30 +40,58 @@ RUN apt-get update && \
         libfontconfig1 \  
         fontconfig-config \  
         libgd3 \  
-        libc-devtools && \  
+        libc-devtools \  
+        gettext \  
+        autopoint && \  
     apt-get clean && \  
     rm -rf /var/lib/apt/lists/*  
   
-# MeCabのソースをクローンしてビルド  
+# MeCab のソースをクローン  
 RUN cd /tmp && \  
     git clone https://github.com/taku910/mecab.git && \  
-    cd mecab/mecab && \  
-    ./configure --enable-utf8-only && \  
-    make && make install  
+    ls -la /tmp/mecab/mecab  
   
-# Mecab IPADIC Neologdのソースをクローンしてビルド  
+# MeCab ビルドの段階的実行  
+RUN cd /tmp/mecab/mecab && \  
+    # autoreconf を実行して configure を再生成  
+    autoreconf -fvi  
+  
+RUN cd /tmp/mecab/mecab && \  
+    # configure の実行  
+    ./configure --enable-utf8-only && \  
+    echo "### Configure 完了 ###"  
+  
+RUN cd /tmp/mecab/mecab && \  
+    # make の実行  
+    make && \  
+    echo "### Make 完了 ###"  
+  
+RUN cd /tmp/mecab/mecab && \  
+    # make install の実行  
+    make install && \  
+    echo "### Make Install 完了 ###"  
+  
+# Mecab IPADIC Neologd のソースをクローンしてビルド  
 RUN cd /tmp && \  
     git clone https://github.com/neologd/mecab-ipadic-neologd.git && \  
-    cd mecab-ipadic-neologd/mecab-ipadic-neologd && \  
+    ls -la /tmp/mecab-ipadic-neologd  
+
+# Neologd のインストール  
+RUN cd /tmp/mecab-ipadic-neologd && \  
+    find ./ -type f -exec sed -i 's/\bsudo\s\+//g' {} + && \  
     ./bin/install-mecab-ipadic-neologd -n -y && \  
-    # 辞書ディレクトリを設定  
-    echo "dicdir = $(mecab-config --dicdir)/mecab-ipadic-neologd" > /usr/local/etc/mecabrc && \  
-    # 一時ファイルのクリーンアップ  
-    rm -rf /tmp/mecab* /tmp/mecab-ipadic-neologd* && \  
+    echo "### Neologd のインストール完了 ###" 
+  
+# dicdir の設定  
+RUN echo "dicdir = $(mecab-config --dicdir)/mecab-ipadic-neologd" > /usr/local/etc/mecabrc && \  
+    echo "### mecabrc の設定完了 ###"  
+  
+# 一時ファイルとキャッシュのクリーンアップ  
+RUN rm -rf /tmp/mecab* /tmp/mecab-ipadic-neologd* && \  
     apt-get clean && \  
     rm -rf /var/lib/apt/lists/*  
   
-# Pythonパッケージのインストール  
+# Python パッケージのインストール  
 RUN pip install --upgrade pip && \  
     pip install --no-cache-dir -r requirements.txt  
   
