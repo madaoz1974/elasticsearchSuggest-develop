@@ -1,0 +1,123 @@
+id: /subscriptions/59d36ea2-439c-4922-b819-f8b2496ced6e/resourceGroups/poc-search-suggest/providers/Microsoft.App/containerapps/elasticsearch
+identity:
+  type: None
+location: Japan East
+name: elasticsearch
+properties:
+  configuration:
+    activeRevisionsMode: Single
+    dapr: null
+    ingress:
+      additionalPortMappings: null
+      allowInsecure: true
+      clientCertificateMode: Ignore
+      corsPolicy: null
+      customDomains: null
+      exposedPort: 0
+      external: true
+      fqdn: elasticsearch.delightfulwave-1815f7a1.japaneast.azurecontainerapps.io
+      ipSecurityRestrictions: null
+      stickySessions:
+        affinity: none
+      targetPort: 9200
+      traffic:
+      - latestRevision: true
+        weight: 100
+      transport: Auto
+    maxInactiveRevisions: 100
+    registries: null
+    secrets:
+    - name: storagekey
+    service: null
+  customDomainVerificationId: ADC56F9D646B8429A48DF35297C913C552B458701A6EA54EC484F3E0B06F8601
+  delegatedIdentities: []
+  environmentId: /subscriptions/59d36ea2-439c-4922-b819-f8b2496ced6e/resourceGroups/poc-search-suggest/providers/Microsoft.App/managedEnvironments/poc-search-suggest-env
+  eventStreamEndpoint: https://japaneast.azurecontainerapps.dev/subscriptions/59d36ea2-439c-4922-b819-f8b2496ced6e/resourceGroups/poc-search-suggest/containerApps/elasticsearch/eventstream
+  latestReadyRevisionName: elasticsearch--xw7y4py
+  latestRevisionFqdn: elasticsearch--xw7y4py.delightfulwave-1815f7a1.japaneast.azurecontainerapps.io
+  latestRevisionName: elasticsearch--xw7y4py
+  managedEnvironmentId: /subscriptions/59d36ea2-439c-4922-b819-f8b2496ced6e/resourceGroups/poc-search-suggest/providers/Microsoft.App/managedEnvironments/poc-search-suggest-env
+  outboundIpAddresses:
+  - 4.216.133.30
+  - 20.243.233.234
+  - 20.243.233.244
+  - 20.243.233.253
+  - 20.243.234.117
+  - 20.243.234.1
+  - 20.243.234.5
+  - 20.243.234.50
+  - 20.243.233.204
+  - 20.243.235.3
+  - 20.18.118.34
+  - 20.18.117.222
+  - 20.18.118.37
+  - 20.18.118.36
+  - 20.18.118.32
+  - 20.18.116.214
+  - 20.18.118.33
+  - 20.18.117.223
+  - 20.18.118.35
+  - 20.18.232.213
+  - 20.48.86.170
+  - 20.48.86.160
+  - 20.48.86.154
+  - 20.48.86.165
+  - 48.218.81.17
+  - 48.218.80.248
+  - 48.218.80.238
+  - 48.218.81.11
+  - 48.218.81.1
+  - 48.218.80.246
+  - 20.210.72.88
+  - 20.210.72.103
+  - 20.210.72.109
+  - 20.210.72.73
+  - 48.218.158.62
+  - 48.218.158.84
+  - 48.218.158.83
+  - 48.218.158.66
+  - 48.218.158.55
+  - 48.218.158.81
+  - 130.33.185.6
+  provisioningState: Succeeded
+  runningStatus: Running
+  template:
+    containers:
+    - env:
+      - name: discovery.type
+        value: single-node
+      - name: xpack.security.enabled
+        value: 'false'
+      - name: ES_JAVA_OPTS
+        value: -Xms512m -Xmx512m
+      image: docker.elastic.co/elasticsearch/elasticsearch:7.10.0
+      name: elasticsearch
+      resources:
+        cpu: 1
+        ephemeralStorage: 4Gi
+        memory: 2Gi
+      volumeMounts:
+      - mountPath: /usr/share/elasticsearch/data
+        volumeName: esdata
+    initContainers: null
+    revisionSuffix: ''
+    scale:
+      maxReplicas: 10
+      minReplicas: null
+      rules: null
+    serviceBinds: null
+    terminationGracePeriodSeconds: null
+    volumes:
+    - name: esdata
+      storageName: esdata
+      storageType: AzureFile
+  workloadProfileName: Consumption
+resourceGroup: poc-search-suggest
+systemData:
+  createdAt: '2025-02-27T00:33:43.5506932'
+  createdBy: kurumada.j@mazda.co.jp
+  createdByType: User
+  lastModifiedAt: '2025-02-27T03:32:43.0138567'
+  lastModifiedBy: kurumada.j@mazda.co.jp
+  lastModifiedByType: User
+type: Microsoft.App/containerApps

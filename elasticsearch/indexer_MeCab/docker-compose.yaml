@@ -1,0 +1,23 @@
+services:
+  indexer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      platforms:
+        - linux/amd64
+    env_file:
+      - .env
+    volumes:
+      - .:/app  # ローカルのコードをコンテナにマウント
+    # リソース制限を追加
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+        reservations:
+          memory: 2G
+    # デバッグラッパースクリプトを使用
+    command: python /app/build_wrapper.py
+    # 対話モードを有効化
+    stdin_open: true
+    tty: true

@@ -1,0 +1,43 @@
+name: elasticsearch
+location: Japan East
+resourceGroup: poc-search-suggest
+properties:
+  managedEnvironmentId: /subscriptions/59d36ea2-439c-4922-b819-f8b2496ced6e/resourceGroups/poc-search-suggest/providers/Microsoft.App/managedEnvironments/poc-search-suggest-env
+  configuration:
+    activeRevisionsMode: Single
+    registries:
+    - server: crmsprpocjpe01.azurecr.io
+      username: crmsprpocjpe01
+      passwordSecretRef: acr-password
+    secrets:
+    - name: acr-password
+      value: "$ACR_PASSWORD"
+    ingress:
+      external: true
+      targetPort: 9200
+      transport: Auto
+  template:
+    containers:
+    - name: elasticsearch
+      image: crmsprpocjpe01.azurecr.io/elasticsearch-kuromoji:7.10.0
+      resources:
+        cpu: 1
+        memory: 2Gi
+        ephemeralStorage: 4Gi
+      env:
+      - name: discovery.type
+        value: single-node
+      - name: xpack.security.enabled
+        value: "false"
+      - name: ES_JAVA_OPTS
+        value: -Xms512m -Xmx512m
+      volumeMounts:
+      - volumeName: esdata
+        mountPath: /usr/share/elasticsearch/data
+    scale:
+      minReplicas: 0
+      maxReplicas: 10
+    volumes:
+    - name: esdata
+      storageName: esdata
+      storageType: AzureFile

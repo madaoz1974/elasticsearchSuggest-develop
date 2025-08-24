@@ -1,26 +1,99 @@
-FROM python:3.9-buster
+FROM python:3.9-bullseye  
+  
+# 環境変数の設定  
+ENV DEBIAN_FRONTEND=noninteractive \  
+    DEBCONF_NOWARNINGS=yes \  
+    PATH="/opt/mssql-tools/bin:${PATH}" \  
+    PYTHONUNBUFFERED=1  
+  
+# 作業ディレクトリの設定  
+WORKDIR /app  
+  
+# 必要なファイルをコピー  
+COPY requirements.txt ./  
+COPY build_wrapper.py ./  
+COPY index_data.py ./  
+COPY install_msodbc.sh ./  
+  
+# install_msodbc.sh に実行権限を付与  
+RUN chmod +x ./install_msodbc.sh  
+  
+# スクリプト内容の確認（デバッグ用）  
+RUN echo "### Contents of install_msodbc.sh ###" && cat install_msodbc.sh  
+  
+# msodbcsql18 のインストール  
+RUN ./install_msodbc.sh  
+  
+# 必要なビルドツールと依存パッケージのインストール  
+RUN apt-get update && \  
+    apt-get install -y --no-install-recommends \  
+        build-essential \  
+        autoconf \  
+        automake \  
+        libtool \  
+        curl \  
+        git \  
+        swig \  
+        libmecab-dev \  
+        pkg-config \  
+        fontconfig \  
+        libfontconfig1 \  
+        fontconfig-config \  
+        libgd3 \  
+        libc-devtools \  
+        gettext \  
+        autopoint && \  
+    apt-get clean && \  
+    rm -rf /var/lib/apt/lists/*  
+  
+# MeCab のソースをクローン  
+RUN cd /tmp && \  
+    git clone https://github.com/taku910/mecab.git && \  
+    ls -la /tmp/mecab/mecab  
+  
+# MeCab ビルドの段階的実行  
+RUN cd /tmp/mecab/mecab && \  
+    # autoreconf を実行して configure を再生成  
+    autoreconf -fvi  
+  
+RUN cd /tmp/mecab/mecab && \  
+    # configure の実行  
+    ./configure --enable-utf8-only && \  
+    echo "### Configure 完了 ###"  
+  
+RUN cd /tmp/mecab/mecab && \  
+    # make の実行  
+    make && \  
+    echo "### Make 完了 ###"  
+  
+RUN cd /tmp/mecab/mecab && \  
+    # make install の実行  
+    make install && \  
+    echo "### Make Install 完了 ###"  
+  
+# Mecab IPADIC Neologd のソースをクローンしてビルド  
+RUN cd /tmp && \  
+    git clone https://github.com/neologd/mecab-ipadic-neologd.git && \  
+    ls -la /tmp/mecab-ipadic-neologd  
 
-# 環境変数の設定
-ENV DEBIAN_FRONTEND=noninteractive
-ENV DEBCONF_NOWARNINGS=yes
-
-WORKDIR /app
-
-COPY requirements.txt .    
-COPY index_data.py .    
-
-# 必要なパッケージのインストール
-RUN apt-get update && \
-    apt-get install -y apt-utils apt-transport-https gnupg curl && \
-    curl https://packages.microsoft.com/keys/microsoft.asc | apt-key add - && \
-    curl https://packages.microsoft.com/config/debian/10/prod.list > /etc/apt/sources.list.d/mssql-release.list && \
-    apt-get update && \
-    ACCEPT_EULA=Y apt-get install -y msodbcsql17 mssql-tools unixodbc-dev && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
-
-# Pythonパッケージのインストール
-RUN pip install --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
-
-CMD ["python", "/app/index_data.py"]
+# Neologd のインストール  
+RUN cd /tmp/mecab-ipadic-neologd && \  
+    find ./ -type f -exec sed -i 's/\bsudo\s\+//g' {} + && \  
+    ./bin/install-mecab-ipadic-neologd -n -y && \  
+    echo "### Neologd のインストール完了 ###" 
+  
+# dicdir の設定  
+RUN echo "dicdir = $(mecab-config --dicdir)/mecab-ipadic-neologd" > /usr/local/etc/mecabrc && \  
+    echo "### mecabrc の設定完了 ###"  
+  
+# 一時ファイルとキャッシュのクリーンアップ  
+RUN rm -rf /tmp/mecab* /tmp/mecab-ipadic-neologd* && \  
+    apt-get clean && \  
+    rm -rf /var/lib/apt/lists/*  
+  
+# Python パッケージのインストール  
+RUN pip install --upgrade pip && \  
+    pip install --no-cache-dir -r requirements.txt  
+  
+# コンテナ起動時に実行するコマンド  
+CMD ["python", "-v", "/app/build_wrapper.py"]  

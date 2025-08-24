@@ -170,3 +170,44 @@ cython_debug/
 # PyPI configuration file
 .pypirc
 elasticsearch/indexer/env.list
+.DS_Store
+
+# macOS固有の不要ファイル
+.DS_Store
+
+# Xcode / Swift / SwiftUI プロジェクト関連の無視ファイル
+build/
+DerivedData/
+*.xcworkspace/
+*.xcodeproj/project.xcworkspace/
+*.xcodeproj/xcuserdata/
+*.xcodeproj/xcshareddata/
+*.xcodeproj/xcdebugger/
+*.swiftpm/
+*.swiftpm/xcode/
+*.playground/
+*.playgroundbook/
+.swiftpm/
+
+# 不要なキャッシュや依存関係
+.swiftpm/
+Packages/
+Package.resolved
+xcuserdata/
+
+# CocoaPods（もし使用している場合）
+Pods/
+Podfile.lock
+
+# Carthage（もし使用している場合）
+Carthage/
+Carthage/Checkouts/
+Carthage/Build/
+
+# Swift Package Manager
+.build/
+.swiftpm/
+
+# SwiftUIのリソースはGitの管理対象とする
+# .xcassets（画像アセット）、.storyboard（ストーリーボード）などは含めるため除外しない
+doc/task/TASK*.md
